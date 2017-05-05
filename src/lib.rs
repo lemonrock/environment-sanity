@@ -13,17 +13,15 @@ extern crate memchr;
 use ::std::collections::HashMap;
 use ::std::collections::HashSet;
 use ::std::env::args_os;
-use ::std::env::split_paths;
-use ::std::env::var_os;
 use ::std::env::vars_os;
 use ::std::ffi::OsString;
 use ::std::fs::File;
 use ::std::io::BufReader;
 use ::std::io::prelude::*;
 #[cfg(unix)] use ::std::os::unix::ffi::OsStringExt;
+#[cfg(unix)] use ::std::os::unix::ffi::OsStrExt;
 #[cfg(unix)] use ::std::os::unix::process::CommandExt;
 use ::std::path::Path;
-use ::std::path::PathBuf;
 use ::std::process::Command;
 use ::std::process::Stdio;
 
@@ -250,25 +248,7 @@ fn addEnvironmentVariablesFromLinesListedInFile<A: FnMut(EnvironmentVariable, &P
 	});
 }
 
-pub fn decodePathEnvironmentVariableAsWeNeedToFindTheProgramToInvoke() -> Vec<PathBuf>
-{
-	let mut paths = match var_os("PATH")
-	{
-		None => Vec::with_capacity(0),
-		Some(paths) => split_paths(&paths).collect()
-	};
-	
-	// On Windows, PATH implicitly includes '.' as the FIRST entry; we also are supposed to take into account the PATHEXT environment variable
-	// See <https://technet.microsoft.com/en-us/library/bb490963.aspx>
-	if cfg!(windows)
-	{
-		paths.insert(0, PathBuf::from("."))
-	}
-	
-	paths
-}
-
-pub fn parseCommandLineArguments(paths: Vec<PathBuf>) -> (OsString, Vec<OsString>)
+pub fn parseCommandLineArguments() -> (OsString, Vec<OsString>)
 {
 	// This logic is designed to work with sha-bang paths, eg
 	// /usr/bin/environment-sanity program-to-invoke <any> <other> <arguments>
@@ -278,61 +258,29 @@ pub fn parseCommandLineArguments(paths: Vec<PathBuf>) -> (OsString, Vec<OsString
 	let mut inputArguments = args_os().skip(1);
 	
 	// Take the second argument, which is the program to invoke
-	let programPath = match inputArguments.next()
+	let programName = match inputArguments.next()
 	{
 		None => fatalExit!("Please provide at least one argument, which is the program to {}", "invoke"),
-		Some(programToInvoke) =>
+		Some(programName) =>
 		{
-			let programPath = PathBuf::from(programToInvoke);
-			
-			match programPath.file_name()
+			if programName.is_empty()
 			{
-				None => fatalExit!("First argument is the program to invoke. It must be a file, not a folder like '{:?}'", programPath),
-				Some(fileName) =>
-				{
-					if PathBuf::from(fileName) == programPath
-					{
-						let mut breakOut = None;
-						for mut path in paths
-						{
-							path.push(fileName);
-							if path.exists() && path.is_file()
-							{
-								breakOut = Some(path);
-							}
-						}
-						if let Some(breakOut) = breakOut
-						{
-							breakOut
-						}
-						else
-						{
-							fatalExit!("First argument '{:?}' can not be found on the PATH", programPath);
-						}
-					}
-					else if programPath.is_absolute()
-					{
-						if programPath.exists() && programPath.is_file()
-						{
-							programPath.clone()
-						}
-						else
-						{
-							fatalExit!("First argument '{:?}' is not an absolute path to an extant, readable file", programPath);
-						}
-					}
-					else
-					{
-						fatalExit!("First argument is neither an absolute path or a program name, but '{:?}'", programPath);
-					}
-				}
+				fatalExit!("{}", "First argument can not be empty");
 			}
+			
+			const Slash: u8 = b'/';
+			if memchr::memchr(Slash, programName.as_os_str().as_bytes()).is_some()
+			{
+				fatalExit!("First argument is the program name to invoke. It must be a file, not a path like '{:?}'", programName);
+			}
+			
+			programName
 		}
 	};
 	
 	let outputArguments = inputArguments.collect();
 	
-	(programPath.into_os_string(), outputArguments)
+	(programName, outputArguments)
 }
 
 pub fn execute(programName: OsString, arguments: Vec<OsString>, filteredEnvironment: HashMap<OsString, OsString>) -> !

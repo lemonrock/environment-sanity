@@ -22,8 +22,7 @@ pub fn main()
 {
 	homeFolderIgnoringValueOfHomeVariable();
 	
-	let paths = decodePathEnvironmentVariableAsWeNeedToFindTheProgramToInvoke();
-	let (programName, outputArguments) = parseCommandLineArguments(paths);
+	let (programName, outputArguments) = parseCommandLineArguments();
 	
 	let mut blackList = BlackList::new(defaultBlackList());
 	if let Some(filePath) = settingsFor(&programName, "Black")
@@ -176,24 +175,46 @@ fn defaultSettings(programName: &OsStr) -> HashMap<EnvironmentVariable, OsString
 	// Belt-and-braces approach to something that is deeply flawed
 	settings.insert("HOMEBREW_NO_ANALYTICS".into(), "1".into());
 	
-	// Musl only supports C.UTF-8 or POSIX
+	// Musl only supports C.UTF-8 or POSIX; Mac OS X only UTF-8
 	// We set all these as belt-and-braces as a lot of code doesn't really grok the subtle POSIX rules for them and they 'break' stuff like `sort`
 	// See here for a discussion of correct settings for Mac OS X and the BSDs: https://www.python.org/dev/peps/pep-0538/
 	// glibc raw, as opposed to being used in Debian, etc, did not support C.UTF-8 correctly in 2014; this may still be the case.
-	settings.insert("LC_ALL".into(), "C.UTF-8".into());
-	settings.insert("LC_COLLATE".into(), "C.UTF-8".into());
-	settings.insert("LC_CTYPE".into(), "C.UTF-8".into());
-	settings.insert("LC_MESSAGES".into(), "C.UTF-8".into());
-	settings.insert("LC_MONETARY".into(), "C.UTF-8".into());
-	settings.insert("LC_NUMERIC".into(), "C.UTF-8".into());
-	settings.insert("LC_TIME".into(), "C.UTF-8".into());
-	settings.insert("LANG".into(), "C.UTF-8".into());
 	
-	// BSDs introduced USER
-	if let Some(logname) = var_os("LOGNAME")
+	if cfg!(target_os = "linux")
 	{
-		settings.insert("USER".into(), logname);
+		settings.insert("LC_ALL".into(), "C.UTF-8".into());
+		settings.insert("LC_COLLATE".into(), "C.UTF-8".into());
+		settings.insert("LC_CTYPE".into(), "C.UTF-8".into());
+		settings.insert("LC_MESSAGES".into(), "C.UTF-8".into());
+		settings.insert("LC_MONETARY".into(), "C.UTF-8".into());
+		settings.insert("LC_NUMERIC".into(), "C.UTF-8".into());
+		settings.insert("LC_TIME".into(), "C.UTF-8".into());
+		settings.insert("LANG".into(), "C.UTF-8".into());
+		
+		// BSDs introduced USER
+		if let Some(logname) = var_os("LOGNAME")
+		{
+			settings.insert("USER".into(), logname);
+		}
 	}
+	else
+	{
+		settings.insert("LC_ALL".into(), "UTF-8".into());
+		settings.insert("LC_COLLATE".into(), "UTF-8".into());
+		settings.insert("LC_CTYPE".into(), "UTF-8".into());
+		settings.insert("LC_MESSAGES".into(), "UTF-8".into());
+		settings.insert("LC_MONETARY".into(), "UTF-8".into());
+		settings.insert("LC_NUMERIC".into(), "UTF-8".into());
+		settings.insert("LC_TIME".into(), "UTF-8".into());
+		settings.insert("LANG".into(), "UTF-8".into());
+		
+		// BSDs introduced USER
+		if let Some(user) = var_os("USER")
+		{
+			settings.insert("LOGNAME".into(), user);
+		}
+	}
+	
 	
 	settings
 }
